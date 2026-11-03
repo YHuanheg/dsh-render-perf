@@ -1,0 +1,10 @@
+# dsh-render-perf bundle patch
+#
+# `dsh.bundle.patch` layer: installing this package appends it to
+# `dsh.profile.bundles`, and profile boot merges this file as one plugin row.
+#
+# `id` is the profile row id and doubles as the Host settings namespace, so
+# renaming it orphans persisted config — keep it stable across versions.
+- insert:
+    - id: render-perf
+      name: '@dsh-external/dsh-render-perf'

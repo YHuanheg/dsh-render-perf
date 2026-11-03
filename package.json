@@ -1,12 +1,13 @@
 {
   "name": "@dsh-external/dsh-render-perf",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "DSH Web 公式渲染性能治理：运行时注入公式渲染结果缓存（不修改安装目录）+ 视口外渲染跳过",
   "type": "module",
   "main": "./lib/index.js",
   "types": "./lib/types/index.d.ts",
   "files": [
-    "lib"
+    "lib",
+    "cordis.patch.yml"
   ],
   "author": "wendou-chen",
   "license": "MIT",
@@ -29,8 +30,11 @@
     "render",
     "enhancement-plugin"
   ],
+  "engines": {
+    "node": ">=20"
+  },
   "peerDependencies": {
-    "cordis": ">=4.0.0-rc <5",
+    "@deepseek-ai/cordis": ">=4.0.0-rc <5",
     "@deepseek-ai/schemastery": "^3.18.0"
   },
   "devDependencies": {
@@ -43,7 +47,8 @@
     "build:host": "tsc -p tsconfig.json",
     "build:client": "tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "verify": "node scripts/verify-patch.mjs"
+    "verify": "node scripts/verify-patch.mjs",
+    "selftest": "node scripts/selftest-host.mjs && node scripts/selftest-client.mjs"
   },
   "exports": {
     ".": {
@@ -56,9 +61,12 @@
     "./package.json": "./package.json"
   },
   "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
-      "inject": [],
-      "platform": "web"
+      "platform": "web",
+      "inject": []
     }
   }
 }

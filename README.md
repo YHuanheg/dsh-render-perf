@@ -107,6 +107,31 @@ __DSH_RENDER_PERF__   // { hits, misses, max, mode, cache }
 
 按 DOM 元素归一化：**每元素渲染成本 0.0671 ms → 0.0132 ms（约 5×）**。
 
+### 真实会话基准（2026-11-03 · 会话「高等数学习题解答」）
+
+数据源：该会话 assistant 正文里的 **322 处块级公式**（274 个不同表达式、48 处重复），
+在 Chromium 128 中用与 bundle 同一套 `renderToString → DOMParser → 递归建元素` 逻辑计时：
+
+| 环节 | 322 处耗时 | 均摊 |
+|---|---|---|
+| KaTeX 编译（`renderToString`） | 38 ms | 0.118 ms/处 |
+| `DOMParser` 解析 + 递归构造 React 元素 | 131 ms | 0.407 ms/处 |
+| 无缓存 · 每次全量重算（3 轮均值） | **206 ms** | — |
+| 有缓存 · 热命中 | **0.1 ms** | 纯 Map 查找 |
+
+结论：重挂载同一会话时公式节点构造从 206 ms 降到 0.1 ms；且 **DOM 解析+建元素占 2/3**，
+这正是 `element` 模式（缓存整个 React 元素数组）优于只缓存 HTML 的原因。
+
+复现方式：
+
+```bash
+node scripts/make-bench-page.mjs <session.v4.jsonl.zstd> .bench
+# 用任意静态服务器打开 .bench/index.html，结果在 window.__BENCH__
+```
+
+口径说明：以上只覆盖「公式节点构造」这一段；React commit、布局、绘制不在内
+（那部分由 `content-visibility` 样式处理）。
+
 ### 正确性回归（全部通过）
 
 | 检查项 | 结果 |
@@ -122,54 +147,54 @@ __DSH_RENDER_PERF__   // { hits, misses, max, mode, cache }
 
 ## 📦 安装与使用指南
 
-### 方式一：使用 DSH 超级注入器（推荐 · 免重启热加载）
+本包是一个 **Cordis bundle**：`package.json` 的 `dsh.bundle.patch` 指向 `cordis.patch.yml`，
+安装时由 DSH 自己把它写进 profile 的 `dependencies` 与 `dsh.profile.bundles`，无需手改 profile。
+仓库**已带构建产物 `lib/`**，从 GitHub 安装时不需要本地编译。
 
-若您的 DSH 已经装载了 `dsh-super-injector`，可直接在终端或 Agent 中一键免重启热注入：
+### 方式一：从 GitHub 安装（推荐）
 
-```powershell
-# 1. 克隆仓库到本地目录
-git clone https://github.com/wendou-chen/dsh-render-perf.git "D:/dsh-render-perf"
-cd "D:/dsh-render-perf"
+```text
+plugin_manager  action=install_bundle  target=github:YHuanheg/dsh-render-perf
+```
 
-# 2. 安装依赖并编译产物（host + client 两端）
+等价的手工写法（写进 profile `package.json`）：
+
+```json
+{
+  "dependencies": {
+    "@dsh-external/dsh-render-perf": "github:YHuanheg/dsh-render-perf"
+  },
+  "dsh": { "profile": { "bundles": ["@dsh-external/dsh-render-perf"] } }
+}
+```
+
+> 从 git 安装拿到的是仓库快照，`lib/` 已在仓库内；若要让 DSH 从源码重建，
+> 需自行 `npm install && npm run build`，或改用方式二。
+
+### 方式二：本地开发安装
+
+```bash
 npm install
 npm run build
 
-# 3. 通过 DSH 工具执行热注入
-dev_inject_plugin(dir: "D:/dsh-render-perf")
+# 让 DSH 安装这个本地包目录（link 进 profile）
+# plugin_manager action=install_bundle target=<abs package dir>
 ```
 
-注入后**硬刷新一次浏览器页面**（`Ctrl+Shift+R`），使新资产与样式生效。
+安装返回 `application: "applied"` 即表示 profile 行已装配；`plugin_manager list_plugins`
+里应看到 `include:render-perf`、`enabled: true`、`fiberPhase: "active"`。
 
-### 方式二：手动配置 Profile 装配（冷启动方式）
+### 生效
 
-1. 在 `~/.dsh/profiles/web/package.json`（或 `desktop` Profile）的 `dependencies` 中添加软链接：
-
-   ```json
-   {
-     "dependencies": {
-       "@dsh-external/dsh-render-perf": "link:D:/dsh-render-perf"
-     },
-     "dsh": {
-       "bundles": [
-         "@dsh-external/dsh-render-perf"
-       ]
-     }
-   }
-   ```
-
-2. 在对应 Profile 的 `node_modules/` 下建立软链接（Windows Junction）：
-
-   ```powershell
-   cmd /c mklink /J "C:\Users\<YourUser>\.dsh\profiles\web\node_modules\@dsh-external\dsh-render-perf" "D:\dsh-render-perf"
-   ```
-
-3. 启动或重启 DSH 服务即可生效。
+| 部分 | 生效条件 |
+|---|---|
+| host 端（公式渲染缓存 + 视口跳过样式） | fiber 加载后**硬刷新页面**（`Ctrl+Shift+R`）即可 |
+| client 端（设置中心诊断卡片） | client bundle 在启动时扫描进 boot manifest，需**重启 DSH** 后才会出现 |
 
 ### 卸载
 
-```powershell
-dev_uninject_plugin(match: "dsh-render-perf")
+```text
+plugin_manager  action=remove_bundle  target=@dsh-external/dsh-render-perf
 ```
 
 卸载后刷新页面即回到原始未打补丁的前端。
@@ -181,7 +206,7 @@ dev_uninject_plugin(match: "dsh-render-perf")
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `enabled` | `boolean` | `true` | 总开关，关闭时插件不注册任何路由与样式 |
-| `distDir` | `string` | `''` | 手动指定 `dsh-web-frontend/dist` 目录；留空自动探测（进程入口推导 / 模块解析 / 常见全局路径） |
+| `distDir` | `string` | `''` | 手动指定 `dsh-web-frontend/dist` 目录；留空自动探测（进程参数 / profile 环境 / 模块解析 / 常见全局路径），**所有命中的 dist 都会被接管** |
 | `mode` | `'element' \| 'html'` | `element` | 补丁形态，见下 |
 
 ### 关于 `html` 模式（实测负优化，默认不启用）
@@ -210,6 +235,16 @@ GET /assets/index-<hash>.js
   → 应用补丁
   → 返回改写内容（cache-control: no-store，确保刷新即生效）
 ```
+
+### 多份 dist 并存时怎么选
+
+桌面版（Electron）与 `dsh web` 可能装载**不同版本**的前端：桌面版从自己的资源树
+（`…resources/app/dsh/node_modules/@deepseek-ai/dsh-web-frontend/dist`）取资产，而 profile 的
+`node_modules/@deepseek-ai/...` 是另一棵 npm 树，两者 `index-<hash>.js` 名字可以完全不同。
+
+本插件因此不做单选：它按「进程参数 → profile 环境 → 模块解析 → 常见全局路径」收集**所有**
+含 `index.html` 的 dist，为每个不同资产名各注册一条 exact 路由（同名去重，运行期资源树优先）。
+这样无论运行时加载哪一份都能被接管，也不会因为挑错版本让页面 404。
 
 ### 补丁做了什么
 

@@ -1,10 +1,12 @@
 node_modules/
-lib/
 *.tsbuildinfo
 *.tgz
 *.log
 .DS_Store
 Thumbs.db
+
+# 基准页产物（由 scripts/make-bench-page.mjs 生成）
+.bench/
 
 # 本机环境专属笔记（不随仓库分发）
 NOTES.local.md
