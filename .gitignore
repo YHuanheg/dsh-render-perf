@@ -8,5 +8,8 @@ Thumbs.db
 # 基准页产物（由 scripts/make-bench-page.mjs 生成）
 .bench/
 
+# 本机 npm 安装产物（插件运行不依赖它，避免每次提交脏工作区）
+package-lock.json
+
 # 本机环境专属笔记（不随仓库分发）
 NOTES.local.md
